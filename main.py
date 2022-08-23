@@ -1,6 +1,8 @@
+import mne.filter
 import numpy as np
 from fastapi import FastAPI
 from pydantic import BaseModel
+
 
 # =============
 # === Model ===
@@ -13,10 +15,11 @@ class Channel(BaseModel):
 
 
 class EEGSignal(BaseModel):
-    # timestamp: int = 0
-    sample_rate: int = 128
-    length: int = 128
-    eeg_signal: list[Channel]
+    timestamp: int = 0
+    ET: bool = 0
+    # sample_rate: int = 128
+    # length: int = 128
+    eeg_signal: list[float]
 
     #
     # @validator("eeg_signal")
@@ -26,22 +29,57 @@ class EEGSignal(BaseModel):
     # class Config:
     #     arbitrary_types_allowed = True
 
+
+# =================
+# === Parameter ===
+# =================
+
+SAMPLING_RATE = 128
+L_FREQ = 0.16
+H_FREQ = 30.
+
+BUFFER_SIZE = 256
+SEGMENT_TIME = 800  # milliseconds
+PICKS = ['Fz', 'Cz']
+DOWN_SAMPLE = 8
+
+eeg_data = np.zeros((32, 1))
+current_time_stamp = 0
+
+
+# times = 1
+
 # ================
 # === Function ===
 # ================
 
 
-def create_data(eeg: EEGSignal):
+def update_data(eeg_signal, timestamp):
     """
-    Create EEG data from input
-    :param eeg:
-    :return: eeg data
-    """
-    data = np.ndarray()
-    # TODO
-    pass
-    return data
+    Update EEG buffer
 
+    Parameters
+    ----------
+    eeg_signal : array_like
+        Values of all sensor in a frame.
+    timestamp : int
+        Timestamp of frame.
+
+    Returns
+    -------
+    None
+    """
+    global eeg_data
+    global current_time_stamp
+
+    sampling_length = len(eeg_data[0])
+    eeg_data = np.insert(eeg_data, len(eeg_data[0]), np.array(eeg_signal[3:-2]), axis=1)
+    current_time_stamp = timestamp
+
+    if sampling_length > BUFFER_SIZE:
+        eeg_data = np.delete(eeg_data, 0, axis=1)
+
+    return
 
 def processing(data: np.ndarray):
     """
@@ -73,6 +111,7 @@ def predict(eeg_signal):
 
 app = FastAPI()
 
+
 # ==============
 # === router ===
 # ==============
@@ -84,11 +123,14 @@ async def base():
 
 
 @app.put("/")
-async def check_ern(eeg: EEGSignal):
+async def check_ern(frame: EEGSignal):
     hasERN = False
-    data = create_data(eeg)
-    processing(data)
-    if predict(data):
-        hasERN = True
+    update_data(frame.eeg_signal, frame.timestamp)
+    if frame.ET:
+        segment_data = processing(eeg_data)
+        if predict(segment_data):
+            hasERN = True
 
-    return {"Has ERN": f"{hasERN}"}
+        return {"Has ERN": f"{hasERN}"}
+    else:
+        return {"Has ERN": 0}
