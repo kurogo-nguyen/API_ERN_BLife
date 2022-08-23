@@ -81,7 +81,8 @@ def update_data(eeg_signal, timestamp):
 
     return
 
-def processing(data: np.ndarray):
+
+def processing(raw_eeg):
     """
     Processing eeg data
 
@@ -89,14 +90,30 @@ def processing(data: np.ndarray):
     - remove noise
     - smooth
     - downsample
-    -
 
 
+    Parameters
+    ----------
+    raw_eeg : np.ndarray
+        EEG signal buffer.
 
-    :param data: eeg data
-    :return:
+    Returns
+    -------
+    segment: np.ndarray
+        EEG segment for detect ERN.
+
+
     """
-    pass
+    filtered = mne.filter.filter_data(raw_eeg,
+                                      sfreq=SAMPLING_RATE,
+                                      l_freq=L_FREQ, h_freq=H_FREQ,)
+
+    resampled = mne.filter.resample(filtered,
+                                    down=DOWN_SAMPLE)
+
+    segmented = resampled[:, -SEGMENT_TIME*SAMPLING_RATE/DOWN_SAMPLE:]
+
+    return segmented
 
 
 def predict(eeg_signal):
@@ -106,7 +123,8 @@ def predict(eeg_signal):
     :param eeg_signal:
     :return: ERN or not ERN (bool)
     """
-    pass
+
+    return True
 
 
 app = FastAPI()
