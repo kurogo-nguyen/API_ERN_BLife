@@ -123,8 +123,11 @@ def predict(eeg_signal):
     :param eeg_signal:
     :return: ERN or not ERN (bool)
     """
+    svm = load('saved_model/svm3.joblib')
 
-    return True
+    result = svm.predict(eeg_signal)
+
+    return result[0]
 
 
 app = FastAPI()
