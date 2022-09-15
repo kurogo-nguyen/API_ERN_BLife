@@ -1,51 +1,60 @@
 import csv
+import threading
+import time
 from typing import Union
 
-import mne.filter
 import numpy as np
+from joblib import load
+
 from fastapi import FastAPI
+
+from mne import Info, create_info, pick_channels
 from mne.baseline import rescale
-from mne.decoding import Vectorizer
+from mne.io import RawArray
+from mne.preprocessing import ICA
+from mne_icalabel import label_components
+from mne.filter import filter_data, resample
+from pydantic import BaseModel
 
-from model import SVM, EegChunk, ET
 
-# =============
-# === Model ===
-# =============
+from config import ModelSettings, Outlet, GeneralSettings
+from model import EegChunk, ET
 
 # =================
 # === Parameter ===
 # =================
 
+DOWN_SAMPLE: int   # RAW_SAMPLING_RATE/MODEL_SAMPLING_RATE
 
-SAMPLING_RATE = 128
-L_FREQ = 0.16
-H_FREQ = 30.
-
-BUFFER_TIME = 4   # seconds
-SEGMENT_TIME = 1  # seconds
-
-BUFFER_SIZE = BUFFER_TIME * SAMPLING_RATE
-SEGMENT_SIZE = SEGMENT_TIME * SAMPLING_RATE+1
-# SEGMENT_SIZE = 0
 PICK_IDX = []
-DOWN_SAMPLE = 1
+
+info_raw: Info
+
+# ET
+PREDICT_COUNT: int = 0
+CLICKED: bool = False
+timestamp_clicked: int = 0
+
+# EEG
+buffer: EegChunk = EegChunk()
+
+# setting
+setting = GeneralSettings()
 
 
-PREDICT_COUNT = 3
-
-eeg_buffer = []
-timestamp_buffer = []
-
-# current_time_stamp = 0
-svm_model = None
-
-
-# times = 1
+# predict model
+model_setting: ModelSettings = ModelSettings()
+model = load(model_setting.model_path)
 
 # ================
 # === Function ===
 # ================
+
+
+def reset_buffer():
+
+    buffer.eeg_data = []
+    buffer.timestamp = []
 
 
 def update_buffer(chunk):
@@ -61,71 +70,114 @@ def update_buffer(chunk):
     -------
 
     """
-    global eeg_buffer
-    global timestamp_buffer
+    # global eeg_buffer, timestamp_buffer
 
-    # sampling_length = len(eeg_buffer[0])
-    eeg_buffer.extend(chunk.eeg_data)
-    timestamp_buffer.extend(chunk.timestamp)
+    buffer.eeg_data.extend(chunk.eeg_data)
+    buffer.timestamp.extend(chunk.timestamp)
 
-    while len(eeg_buffer) > BUFFER_SIZE:
-        eeg_buffer.pop()
+    while len(buffer.eeg_data) > setting.BUFFER_SIZE:
+        buffer.eeg_data.pop(0)
+        buffer.timestamp.pop(0)
 
     return
 
 
-def processing(raw_eeg):
+def processing():
     """
     Processing eeg data
-
-    - reformat
-    - filter
-    - remove noise
-    - smooth
-    - downsample
 
 
     Parameters
     ----------
-    raw_eeg : list
-        EEG signal buffer.
 
     Returns
     -------
     segment: np.ndarray
         EEG segment for detect ERN.
     """
-    global timestamp_buffer, PICK_IDX
-    eeg = np.array(raw_eeg).T
+    # global eeg_buffer, timestamp_buffer
+    global PICK_IDX
+    eeg = np.array(buffer.eeg_data).T
 
-    picked = eeg[PICK_IDX]
+    if setting.use_ica:
+        raw = RawArray(data=eeg, info=info_raw)
 
-    filtered = mne.filter.filter_data(picked,
-                                      sfreq=SAMPLING_RATE,
-                                      l_freq=L_FREQ, h_freq=H_FREQ,
-                                      method='iir',
-                                      verbose=0)
+        raw.filter(model_setting.l_freq, model_setting.h_freq)
 
-    resampled = mne.filter.resample(filtered,
-                                    down=DOWN_SAMPLE,
-                                    verbose=0)
+        ica = ICA(
+            n_components=.99,
+            max_iter="auto",
+            method="infomax",
+            # random_state=97,
+            fit_params=dict(extended=True),
+        )
+        ica.fit(raw)
+
+        labels = label_components(raw, ica, method="iclabel")["labels"]
+
+        exclude_idx = [idx for idx, label in enumerate(labels) if label not in ["brain", "other"]]
+        ica.apply(raw, exclude=exclude_idx)
+        raw.pick_channels(model_setting.channels)
+
+        resampled = raw.resample(model_setting.sfreq).get_data()
+    else:
+        # pick channel
+        picked = eeg[PICK_IDX]
+
+        # filter
+        filtered = filter_data(picked,
+                               sfreq=setting.RAW_SAMPLING_RATE,
+                               l_freq=model_setting.l_freq, h_freq=model_setting.h_freq,
+                               # method='iir',
+                               verbose=0)
+
+        # downsample
+        resampled = resample(filtered,
+                             down=DOWN_SAMPLE,
+                             verbose=0)
     # mne.filter.s
     # segmented = resampled[:, -1024:]
 
-    segmented = resampled[:, -SEGMENT_SIZE:]
+    # Split segmented
+    segmented = resampled[:, -model_setting.shape[2]:]
 
-    rescaled = rescale(data=segmented, times=np.array(timestamp_buffer[-SEGMENT_SIZE:])-timestamp_buffer[-SEGMENT_SIZE],
-                       baseline=(0, 0.4),  mode='mean')
+    # Norm
+    rescaled = rescale(data=segmented,
+                       times=np.array(buffer.timestamp[-model_setting.shape[1]:]) - buffer.timestamp[-model_setting.shape[1]],
+                       baseline=(0, -model_setting.t_min), mode='mean')
 
-    vect = Vectorizer()
-
-    trans = vect.fit_transform([rescaled])
+    # flatten
+    trans = rescaled.reshape(1, -1)
 
     return trans
 
 
 def is_correct(eeg_signal):
-    return svm_model.detect_ern(eeg_signal)
+    return model.predict(eeg_signal)
+
+
+class BackgroundTasks(threading.Thread):
+    def run(self):
+        outlet = Outlet()
+        # global PREDICT_COUNT, CLICKED, timestamp_clicked
+
+        while True:
+            global PREDICT_COUNT, CLICKED, timestamp_clicked
+            if CLICKED and len(buffer.eeg_data) > setting.BUFFER_SIZE:
+                segment_data = processing()
+                if is_correct(segment_data):
+                    PREDICT_COUNT = PREDICT_COUNT - 1
+                    if PREDICT_COUNT == 0:
+                        CLICKED = False
+                    outlet.send_sample(timestamp_clicked, 1)  # action correct
+                else:
+                    PREDICT_COUNT = 0
+                    CLICKED = False
+                    outlet.send_sample(timestamp_clicked, 0)  # action error
+            # else:
+            #     outlet.send_sample(timestamp_clicked, 1)
+
+            time.sleep(0.1)
 
 
 app = FastAPI()
@@ -133,21 +185,29 @@ app = FastAPI()
 
 @app.on_event("startup")
 async def startup_event():
-    global svm_model, L_FREQ, H_FREQ, PICK_IDX
+    global PICK_IDX, CLICKED
+    global DOWN_SAMPLE
+    global info_raw
 
-    svm_model = SVM()
-    svm_model.load_model()
+    # down sample rate
+    DOWN_SAMPLE = int(setting.RAW_SAMPLING_RATE/model_setting.sfreq)
 
-    L_FREQ = svm_model.freq[0]
-    H_FREQ = svm_model.freq[1]
-
-    f = open('channels.csv')
+    # set channel eeg for model
+    f = open('example/channel.csv')
     file = csv.reader(f, delimiter=',')
     channels = []
     for row in file:
         channels.append(row[1])
-    # PICKS = svm_model.channels
-    PICK_IDX = mne.pick_channels(ch_names= channels, include=svm_model.channels)
+
+    info_raw = create_info(ch_names=channels, sfreq=setting.RAW_SAMPLING_RATE, ch_types='eeg')
+    PICK_IDX = pick_channels(ch_names=channels, include=model_setting.channels, ordered=True)
+
+    # set action status
+    CLICKED = False
+
+    # start predict outlet
+    Predict = BackgroundTasks()
+    Predict.start()
 
 
 # ==============
@@ -160,14 +220,20 @@ async def base():
     return "Home"
 
 
-@app.put("/test")
-async def check_error_action(chunk: EegChunk, et: Union[ET, None] = None):
+@app.put("/update_eeg")
+async def update_eeg(chunk: EegChunk):
+    # , et: Union[ET, None] = None
     update_buffer(chunk)
-    if et is not None:
-        if et.is_clicked:
-            segment_data = processing(eeg_buffer)
-            if not is_correct(segment_data):
-                return {"error": 1}
-        return {"error": 0}
-    else:
-        return {"error": 0}
+
+    return {'eeg_updated': 'ok'}
+
+
+@app.put('/update_et')
+async def clicked(et: ET):
+    global PREDICT_COUNT, timestamp_clicked, CLICKED
+    if et.is_clicked:
+        CLICKED = True
+        timestamp_clicked = et.timestamp
+        PREDICT_COUNT = setting.PREDICT_COUNT
+
+    return {'status': 'ok'}
