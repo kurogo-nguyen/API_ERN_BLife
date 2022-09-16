@@ -51,6 +51,8 @@ Luồng dữ liệu vào là các [Lab Streaming Layer (LSL)](https://github.com
     df = pd.DataFrame(ch_labels)
     df.to_csv('channels.csv', header=False)
 
+Mặc định dữ liệu từ cấc luồng sẽ có dạng **[[điểm dữ liệu], thời gian tương ứng]** khi lấy dữ liệu ở dạng sample và **[[n điểm dữ liệu], n điểmt thời gian tương ứng]** khi lấy dữ liệu ở dạng chunk. Nếu không cung cấp chuỗi thời gian thì sẽ tự động lấy thời gian của hệ thống.
+
 Có 2 địa chỉ của API là:
 - ***'/update-eeg'*** dùng để nhận tín hiệu eeg và cập nhật vào bộ nhớ buffer chờ xử lý. 
 
@@ -64,7 +66,7 @@ Có 2 địa chỉ của API là:
 
 
 ## Luồng dữ liệu ra
-Luồng dữ liệu ra cũng là 1 LSL. Các thông số của luồng dữ liệu ra sẽ được thiết lập tại class **Outlet()**. Các thông số được thiết lập bao gồm:
+Luồng dữ liệu ra cũng là 1 LSL. Các thông số của luồng dữ liệu ra sẽ được thiết lập tại class **Outlet()** trong file **config.py**. Các thông số được thiết lập bao gồm:
 - **name**: tên của luồng dữ liệu ra
 - **n_channels**: số lượng kênh của dữ liệu ra
 - **data_type**: loại dữ liệu ra (nên để là Maker)
@@ -73,7 +75,7 @@ Luồng dữ liệu ra cũng là 1 LSL. Các thông số của luồng dữ li�
 - **outlet**: luồng tín hiệu ra (không sửa)
 - **channel_name**: tên các kênh của dữ liệu ra
 
-Mặc định dữ liệu ra sẽ có dạng **[[điểm dữ liệu], thời gian tương ứng]**. Nếu không cung cấp chuỗi thời gian thì sẽ tự động lấy thời gian của hệ thống. Để gửi thời gian mong muốn thì thêm vào nó vào tham số **timesample** khi gọi hàm **send_sample()**
+Luồng dữ liệu ra được gửi dượi dạng các sample bằng hàm **send_sample()** của class **Outlet()**. Mỗi sample có dạng **[[kết quả dự đoán], thời điểm của hành động]**. Mặc định thì giá trị thời gian sẽ được gửi theo thời gian hệ thống. Để gửi thời gian mong muốn thì thêm vào nó vào tham số **timesample** khi gọi hàm **send_sample()**
 
 
 
