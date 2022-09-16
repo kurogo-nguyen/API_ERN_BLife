@@ -31,9 +31,37 @@ Các thông số của mô hình dự đoán được thiết lập tại class 
 Khi muốn thay đổi mô hình dự đoán thì cần phải cập nhật file mô hình và các thông số tương ứng của mô hình mới
 
 ## Luồng dữ liệu vào
-Luồng dữ liệu vào là các [Lab Streaming Layer (LSL)](https://github.com/sccn/labstreaminglayer) được thiết lập trong file api_inlet.py. Các thông số của luồng này bao gồm:
-- **host**: địa chỉ api được khởi chạy
+Luồng dữ liệu vào là các [Lab Streaming Layer (LSL)](https://github.com/sccn/labstreaminglayer) được thiết lập trong file **api_inlet.py**. Các thông số của luồng này bao gồm:
+- **host**: địa chỉ API được khởi chạy
 - **ET_stream_name**: tên của luồng dữ liệu gửi từ phần mềm blife
+
+***channels.csv*** là file chứa thứ tự các kênh của tín hiệu EEG thu được từ thiết bị emotiv. Nếu sử dụng các thiết bị hoặc cấu hình khác thì có thể sử dụng đoạn code dưới đây để tạo file channels.csv tương ứng
+
+    import pandas as pd
+    from pylsl import StreamInfo
+
+    streams = resolve_stream('name', 'EmotivDataStream-EEG')
+    inlet = StreamInlet(streams[0])
+
+    ch_labels = []
+    ch = inlet.info().desc().child("channels").child("channel")
+    for k in range(inlet.info().channel_count()):
+        ch_labels.append(ch.child_value("label"))
+        ch = ch.next_sibling()
+    df = pd.DataFrame(ch_labels)
+    df.to_csv('channels.csv', header=False)
+
+Có 2 địa chỉ của API là:
+- ***'/update-eeg'*** dùng để nhận tín hiệu eeg và cập nhật vào bộ nhớ buffer chờ xử lý. 
+
+    Tham số được truyền vào là file JSON có 2 thuộc tính 'eeg_data' và 'timestamp'. Thuộc tính 'eeg_data' nhận giá trị là một mảng hai chiều m*n chứa giá trị của m sample, mỗi sample có dữ liệu của n kênh. Thuộc tính 'timestamp' nhận giá trị là chuỗi m số thực lưu thời điểm các sample tương ứng được ghi lại. Các giá trị này được lấy trực tiếp ở luồng dữ liệu truyền ra từ emotiv.
+
+- ***'/update-et'*** dùng để nhận tín hiệu gõ bàn phím (ET) và cập nhật vào bộ nhớ. Sau đó quá trình dự đoán sẽ được thực hiện.
+
+    
+    Tham số được truyền vào là file JSON có 2 thuộc tính 'is_clicked' và 'timestamp'. Thuộc tính 'timestamp' là thời điểm một nút được lựa chọn trong phần mềm ET. Thuộc tính 'is_clicked' luôn là True để thông báo là hành động đã được thực hiện.
+
+
 
 ## Luồng dữ liệu ra
 Luồng dữ liệu ra cũng là 1 LSL. Các thông số của luồng dữ liệu ra sẽ được thiết lập tại class **Outlet()**. Các thông số được thiết lập bao gồm:
@@ -58,6 +86,7 @@ Thông số chung sẽ được thiết lập tại class **Setting()** trong fi
 
 ***Lưu ý***: thời gian thực hiện ica khoảng 0.8s/1s dữ liệu
 
+
 # Khởi chạy chương trình
 
 Khởi chạy API bằng câu lệnh:
@@ -66,11 +95,12 @@ Khởi chạy API bằng câu lệnh:
 
 với x.x.x.x là địa chỉ host và y là port khởi chạy API. Địa chỉ mặc định là 127.0.0.1:8000
 
-Khởi chạy nhận luồng dữ liệu và đưa vào API:
+Khởi chạy chương trình kết nối nhận luồng dữ liệu và đưa vào API:
 
     python api-inlet.py
 
 
+***Lưu ý:*** khởi chạy API trước khi chạy chương trình kết nối
 
 
 
