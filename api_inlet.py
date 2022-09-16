@@ -15,7 +15,7 @@ def send_eeg():
 
     print("looking for eeg stream...")
     # first resolve a Motion stream on the lab network
-    streams = resolve_stream('type', 'EEG')
+    streams = resolve_stream('name', 'EmotivDataStream-EEG')
 
     # # create a new inlet to read from the stream
     inlet = StreamInlet(streams[0])
