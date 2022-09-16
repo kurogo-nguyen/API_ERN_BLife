@@ -193,7 +193,7 @@ async def startup_event():
     DOWN_SAMPLE = int(setting.RAW_SAMPLING_RATE/model_setting.sfreq)
 
     # set channel eeg for model
-    f = open('example/channel.csv')
+    f = open('channels.csv')
     file = csv.reader(f, delimiter=',')
     channels = []
     for row in file:
