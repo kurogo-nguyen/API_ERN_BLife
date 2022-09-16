@@ -23,7 +23,7 @@ Các thông số của mô hình dự đoán được thiết lập tại class 
 - **channels**: danh sách các kênh được sử dụng để dự đoán
 - **sfreq**: tần số lấy mẫu của dữ liệu đưa vào mô hình
 - **t_min**: thời điển bắt đầu của dữ liệu so với hành động. Đơn vị là giây.
-- **t_max**: thời điểm bắt dầu của dữ liệu so với hành động. Đơn vị là giây.
+- **t_max**: thời điểm kết thúc của dữ liệu so với hành động. Đơn vị là giây.
 - **l_freq**: lọc thông thấp
 - **h_freq**: lọc thông cao
 - **shape**: cặp thông số về kích thước dữ liệu đầu vào của mô hình và số dữ liệu sử dụng trên mỗi kênh. Ví dụ ((1,56), 28) thì (1,56) là kích thước đầu vào của mô hình, 28 là số điểm dữ liệu lấy trên 1 kênh
@@ -58,12 +58,13 @@ Có 2 địa chỉ của API là:
 
     Tham số được truyền vào là file JSON có 2 thuộc tính 'eeg_data' và 'timestamp'. Thuộc tính 'eeg_data' nhận giá trị là một mảng hai chiều m*n chứa giá trị của m sample, mỗi sample có dữ liệu của n kênh. Thuộc tính 'timestamp' nhận giá trị là chuỗi m số thực lưu thời điểm các sample tương ứng được ghi lại. Các giá trị này được lấy trực tiếp ở luồng dữ liệu truyền ra từ emotiv.
 
+
 - ***'/update-et'*** dùng để nhận tín hiệu gõ bàn phím (ET) và cập nhật vào bộ nhớ. Sau đó quá trình dự đoán sẽ được thực hiện.
 
     
     Tham số được truyền vào là file JSON có 2 thuộc tính 'is_clicked' và 'timestamp'. Thuộc tính 'timestamp' là thời điểm một nút được lựa chọn trong phần mềm ET. Thuộc tính 'is_clicked' luôn là True để thông báo là hành động đã được thực hiện.
 
-
+Phản hồi khi gửi dữ liệu lên hai địa chỉ này là một JSON có thuộc tính status. Thuộc tính này sẽ có giá trị 'eeg_updated' khi nhận tín hiệu EEG và 'et_updated' khi nhận tín hiệu ET.
 
 ## Luồng dữ liệu ra
 Luồng dữ liệu ra cũng là 1 LSL. Các thông số của luồng dữ liệu ra sẽ được thiết lập tại class **Outlet()** trong file **config.py**. Các thông số được thiết lập bao gồm:
@@ -93,7 +94,7 @@ Thông số chung sẽ được thiết lập tại class **Setting()** trong fi
 
 Khởi chạy API bằng câu lệnh:
 
-    uvicon main:app --host x.x.x.x -- port y
+    uvicorn main:app --host x.x.x.x --port y
 
 với x.x.x.x là địa chỉ host và y là port khởi chạy API. Địa chỉ mặc định là 127.0.0.1:8000
 
