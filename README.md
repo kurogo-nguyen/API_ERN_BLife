@@ -100,7 +100,7 @@ với x.x.x.x là địa chỉ host và y là port khởi chạy API. Địa ch�
 
 Khởi chạy chương trình kết nối nhận luồng dữ liệu và đưa vào API:
 
-    python api-inlet.py
+    python api_inlet.py
 
 
 ***Lưu ý:*** khởi chạy API trước khi chạy chương trình kết nối
